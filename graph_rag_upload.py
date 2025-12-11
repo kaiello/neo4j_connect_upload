@@ -2,6 +2,7 @@ import json
 import time
 import os
 import glob
+import argparse
 from neo4j import GraphDatabase
 
 # Configuration
@@ -89,22 +90,27 @@ def upload_chunk_data(tx, chunk_data):
 
     # 3. Process Extracted Nodes
     for node in chunk_data.get('extracted_nodes', []):
-        # We add the specific label AND the 'Entity' label
-        # Dynamic labels in Cypher can be tricky with parameters, 
-        # so we use APOC if available or string formatting if trusted input.
-        # Since this is a local script, we'll use string formatting for the label 
-        # BUT we must sanitize or ensure labels are safe. 
-        # Assuming labels in JSON are safe (e.g. "dbo_Organisation").
+        # Handle different JSON formats (label vs type)
+        label = node.get('label') or node.get('type') or "Unknown"
         
-        label = node['label']
         # Sanitize label to be safe (alphanumeric only)
         safe_label = "".join(x for x in label if x.isalnum() or x == "_")
         
+        # Handle properties (nested 'properties' dict vs top-level keys)
+        props = node.get('properties', {}).copy()
+        if not props:
+            # If no 'properties' key, treat other top-level keys as properties
+            # Exclude reserved keys
+            reserved_keys = {'id', 'label', 'type'}
+            for k, v in node.items():
+                if k not in reserved_keys:
+                    props[k] = v
+
         query = f"""
             MERGE (e:Entity {{id: $id}})
             SET e:{safe_label}, e += $props
         """
-        tx.run(query, id=node['id'], props=node.get('properties', {}))
+        tx.run(query, id=node['id'], props=props)
 
     # 4. Process Extracted Edges
     for edge in chunk_data.get('extracted_edges', []):
@@ -146,6 +152,14 @@ def upload_chunk_data(tx, chunk_data):
             tx.run(query, source_id=source_id, target_id=target_id)
 
 def main():
+    parser = argparse.ArgumentParser(description="Upload JSONL data to Neo4j for Graph RAG.")
+    parser.add_argument("directory", nargs="?", default=DATA_DIRECTORY, help="Directory containing JSONL files")
+    parser.add_argument("--recursive", "-r", action="store_true", help="Search recursively for .jsonl files")
+    args = parser.parse_args()
+    
+    data_dir = args.directory
+    recursive = args.recursive
+
     driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
 
     try:
@@ -155,10 +169,15 @@ def main():
         create_indexes(driver)
 
         # Get all .jsonl files in the directory
-        jsonl_files = glob.glob(os.path.join(DATA_DIRECTORY, "*.jsonl"))
+        if recursive:
+            search_pattern = os.path.join(data_dir, "**", "*.jsonl")
+        else:
+            search_pattern = os.path.join(data_dir, "*.jsonl")
+            
+        jsonl_files = glob.glob(search_pattern, recursive=recursive)
         
         if not jsonl_files:
-            print(f"No .jsonl files found in directory: {DATA_DIRECTORY}")
+            print(f"No .jsonl files found in directory: {data_dir} (Recursive: {recursive})")
             return
 
         print(f"Found {len(jsonl_files)} files to process: {[os.path.basename(f) for f in jsonl_files]}")
