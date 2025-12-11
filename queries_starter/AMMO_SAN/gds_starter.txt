@@ -1,0 +1,50 @@
+// Create a graph projection named 'ammoGraph'
+CALL gds.graph.project(
+    'ammoGraph',
+    // 1. Target these specific Labels
+    ['kb_Project', 'kb_System', 'dbo_Organisation', 'kb_Person', 'kb_Concept'],
+    // 2. Target these specific Relationship Types (excluding 'MENTIONS' to focus on entity links)
+    ['LEADS', 'MANAGES', 'SPONSORS', 'FUNDS', 'SUPPORTS', 'USES', 'INTEROPERATES_WITH', 'PARTICIPATES_IN', 'LINKED_TO', 'DEVELOPS', 'PARTNERS_WITH']
+)
+YIELD graphName, nodeCount, relationshipCount, projectMillis
+
+//Importance or influence, who or what are the most influential entities in this ecosystem - PAGERANK
+CALL gds.pageRank.stream('ammoGraph')
+YIELD nodeId, score
+WITH gds.util.asNode(nodeId) AS entity, score
+RETURN entity.name AS EntityName, labels(entity)[0] AS Type, score AS InfluenceScore
+ORDER BY score DESC
+LIMIT 10
+
+
+//Connectivity - Betweenness Centrality, Who acts as the "bridge" between different groups? Nodes with high betweenness centrality often control the flow of information or funding. Removing these nodes would disconnect the graph.
+
+CALL gds.betweenness.stream('ammoGraph')
+YIELD nodeId, score
+WITH gds.util.asNode(nodeId) AS entity, score
+WHERE score > 0 // Filter out disconnected nodes
+RETURN entity.name AS EntityName, labels(entity)[0] AS Type, score AS BridgingScore
+ORDER BY score DESC
+LIMIT 10
+
+//Communities- Louvain Modularity- What are the distinct "clusters" or working groups? The Louvain algorithm detects communities where entities are more densely connected to each other than to the rest of the graph.
+CALL gds.louvain.stream('ammoGraph')
+YIELD nodeId, communityId
+WITH gds.util.asNode(nodeId) AS entity, communityId
+// Group results by Community ID to see the clusters
+RETURN communityId, collect(entity.name) AS Members
+ORDER BY size(Members) DESC
+LIMIT 5
+
+//Similarity - Node Similarity - Which entities have similar roles or connections? This calculates similarity based on neighbors. For example, it might find that EUCOM and INDOPACOM are similar because they both SPONSOR the same projects.
+
+CALL gds.nodeSimilarity.stream('ammoGraph')
+YIELD node1, node2, similarity
+WITH gds.util.asNode(node1) AS entity1, gds.util.asNode(node2) AS entity2, similarity
+WHERE similarity < 1.0 // Exclude exact self-matches
+RETURN entity1.name AS Entity1, entity2.name AS Entity2, similarity AS SimilarityScore
+ORDER BY similarity DESC
+LIMIT 10
+
+//clean-up
+CALL gds.graph.drop('ammoGraph')
