@@ -65,13 +65,11 @@ def upload_chunk_data(tx, chunk_data):
     meta = chunk_data.get('metadata', {})
     
     # Determine extra labels (e.g. if type is table, add :Table label)
-    # We use basic string manipulation for the label here, ensuring it's safe
     node_labels = "Chunk"
     if chunk_data.get('type') == 'table':
         node_labels += ":Table"
 
     # 3. Merge Chunk with comprehensive properties
-    # Note: We set doc_id and type on the node itself to allow easier filtering later
     query_merge_chunk = f"""
         MERGE (c:Chunk {{id: $chunk_id}})
         SET c:{node_labels},
@@ -91,22 +89,41 @@ def upload_chunk_data(tx, chunk_data):
     tx.run(query_merge_chunk, 
         chunk_id=chunk_data['chunk_id'], 
         text=chunk_data['text'], 
-        # Embeddings might be missing for some table rows, handle gracefully
         embedding=chunk_data.get('embedding', []),
         page_number=meta.get('page_number'),
         type=chunk_data.get('type', 'text'),
         doc_id=chunk_data['doc_id'],
-        # Table specific metadata handling
         summary=meta.get('summary'),
         html_content=meta.get('html_content') or meta.get('text_as_html'),
         markdown_content=meta.get('markdown_content')
     )
 
+    # Define a mapping for inconsistent labels
+    LABEL_MAPPING = {
+        "Person": "Kb_Person",    # Force 'Person' to become 'Kb_Person'
+        "Organization": "Dbo_Organisation",
+        "System": "Kb_System",
+        "Program": "Kb_Program",
+        "Fundingsource": "FundingSource", # Example of fixing title() artifacts
+        "Project": "Kb_Project"
+    }
+
     # 4. Process Extracted Nodes (Entities)
     for node in chunk_data.get('extracted_nodes', []):
-        label = node.get('label') or node.get('type') or "Unknown"
-        safe_label = "".join(x for x in label if x.isalnum() or x == "_")
+        raw_label = node.get('label') or node.get('type') or "Unknown"
         
+        # --- FIX 1: Normalize Label Casing ---
+        # "organization" -> "Organization", "SYSTEM" -> "System"
+        safe_label = "".join(x for x in raw_label if x.isalnum() or x == "_").title()
+        
+        # --- FIX 2: Apply Label Mapping (Override) ---
+        if safe_label in LABEL_MAPPING:
+            safe_label = LABEL_MAPPING[safe_label]
+        
+        # --- FIX 3: Normalize Node IDs (Prevent Duplicates like 'omid panahi' vs 'omid_panahi') ---
+        # Lowercase AND replace spaces with underscores
+        node_id = node['id'].strip().lower().replace(" ", "_")
+
         props = node.get('properties', {}).copy()
         if not props:
             # Fallback if properties are at top level
@@ -115,39 +132,44 @@ def upload_chunk_data(tx, chunk_data):
                 if k not in reserved_keys:
                     props[k] = v
 
-        # Merge Entity with generic Entity label AND specific label
+        # Merge Entity
         query_entity = f"""
             MERGE (e:Entity {{id: $id}})
             SET e:{safe_label}, e += $props
         """
-        tx.run(query_entity, id=node['id'], props=props)
+        tx.run(query_entity, id=node_id, props=props)
 
     # 5. Process Extracted Edges
     for edge in chunk_data.get('extracted_edges', []):
         source_id = edge['source']
         target_id = edge['target']
+        
         rel_type = edge['type']
         safe_rel_type = "".join(x for x in rel_type if x.isalnum() or x == "_").upper()
 
         if source_id == chunk_data['chunk_id']:
-            # Chunk -> Entity Relationship (e.g. MENTIONS)
+            # Chunk -> Entity Relationship
+            # Target is an Entity, so we MUST apply the same normalization: lowercase + underscores
+            target_id_norm = target_id.strip().lower().replace(" ", "_")
+            
             query_rel = f"""
                 MATCH (c:Chunk {{id: $source_id}})
-                MATCH (e:Entity {{id: $target_id}})
+                MERGE (e:Entity {{id: $target_id}})
                 MERGE (c)-[:{safe_rel_type}]->(e)
             """
-            tx.run(query_rel, source_id=source_id, target_id=target_id)
+            tx.run(query_rel, source_id=source_id, target_id=target_id_norm)
         else:
             # Entity -> Entity Relationship
-            # We match first to ensure nodes exist. 
-            # In a clean pipeline, nodes should exist from Step 4, 
-            # but MERGE ensures robustness if data is out of order.
+            # Both are entities, so normalize BOTH IDs
+            source_id_norm = source_id.strip().lower().replace(" ", "_")
+            target_id_norm = target_id.strip().lower().replace(" ", "_")
+
             query_rel = f"""
                 MERGE (s:Entity {{id: $source_id}})
                 MERGE (t:Entity {{id: $target_id}})
                 MERGE (s)-[:{safe_rel_type}]->(t)
             """
-            tx.run(query_rel, source_id=source_id, target_id=target_id)
+            tx.run(query_rel, source_id=source_id_norm, target_id=target_id_norm)
 
 def main():
     parser = argparse.ArgumentParser(description="Upload JSONL data to Neo4j for Graph RAG.")

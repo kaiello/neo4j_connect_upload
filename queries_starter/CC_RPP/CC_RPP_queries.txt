@@ -1,0 +1,42 @@
+// 1. Identify Key Organizations and their specific Roles (Lead, Partner, Contributor)
+MATCH (p:Kb_Project {name: "LAND-BASED ELECTROMAGNETIC RAILGUN"})<-[r]-(o:Dbo_Organisation)
+RETURN o.name AS Organization, type(r) AS Role
+ORDER BY type(r)
+
+// Find Persons mentioned in the same Document as the Project
+MATCH (p:Kb_Project {name: "LAND-BASED ELECTROMAGNETIC RAILGUN"})<-[:MENTIONS]-(c1:Chunk)-[:PART_OF]->(d:Document)<-[:PART_OF]-(c2:Chunk)-[:MENTIONS]->(person:Kb_Person)
+RETURN person.name AS POC_Name, person.email AS Email, person.title AS Title
+
+
+// 4. List Systems and Technologies the project USES or INTEGRATES WITH
+MATCH (p:Kb_Project {name: "LAND-BASED ELECTROMAGNETIC RAILGUN"})-[r:USES|INTEGRATES_WITH]->(tech)
+RETURN tech.name AS Technology_System, labels(tech)[0] AS Type, type(r) AS Relationship
+
+// 6. Identify Geographic Locations associated with the project (e.g., Guam, ROK)
+MATCH (p:Kb_Project {name: "LAND-BASED ELECTROMAGNETIC RAILGUN"})-[:LOCATED_IN]->(loc:Dbo_Location)
+RETURN loc.name AS Deployment_Location
+
+// 7. Search for Schedule, TRL info, or Fiscal Year mentions in text chunks
+MATCH (p:Kb_Project {name: "LAND-BASED ELECTROMAGNETIC RAILGUN"})<-[:MENTIONS]-(c:Chunk)
+WHERE c.text CONTAINS 'FY' OR c.text CONTAINS 'Year' OR c.text CONTAINS 'TRL'
+RETURN c.text AS Schedule_Milestones
+
+// 9. Extract "Operational Value" and "Problem Statements"
+MATCH (p:Kb_Project {name: "LAND-BASED ELECTROMAGNETIC RAILGUN"})<-[:MENTIONS]-(c:Chunk)
+WHERE c.text CONTAINS 'Operational Value' OR c.text CONTAINS 'deliverables'
+RETURN c.text AS Strategic_Rationale
+
+// 10. Find Concepts addressed by the project (e.g., Contested Logistics)
+MATCH (p:Kb_Project {name: "LAND-BASED ELECTROMAGNETIC RAILGUN"})-[:ADDRESSES]->(con:Kb_Concept)
+RETURN con.name AS Concept, "Addresses/Mitigates" AS Relationship
+
+//multihop
+// Strategy: Find Time Periods mentioned in Tables or Chunks within the same Document
+MATCH (p:Kb_Project {name: "LAND-BASED ELECTROMAGNETIC RAILGUN"})<-[:MENTIONS]-(c1:Chunk)-[:PART_OF]->(d:Document)<-[:PART_OF]-(node)
+WHERE (node:Table OR node:Chunk) AND (node.text CONTAINS 'FY' OR node.markdown_content CONTAINS 'FY')
+RETURN 
+    p.name AS Project, 
+    node.text AS Text_Snippet, 
+    node.markdown_content AS Table_Data,
+    node.summary AS Summary
+

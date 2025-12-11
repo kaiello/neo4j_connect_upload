@@ -1,57 +1,57 @@
 //general exploration
-MATCH (center:kb_Project {code: "AMMO-SAN"})-[r]-(neighbor)
+MATCH (center:Kb_Project {code: "AMMO-SAN"})-[r]-(neighbor)
 RETURN center, r, neighbor
 LIMIT 25
 
 //full project ecosystem
-MATCH path = (p:kb_Project {code: "AMMO-SAN"})-[*1..2]-(n)
+MATCH path = (p:Kb_Project {code: "AMMO-SAN"})-[*1..2]-(n)
 RETURN path
 
 //who
-MATCH (p:kb_Person)-[r]->(proj:kb_Project {code: "AMMO-SAN"})
+MATCH (p:Kb_Person)-[r]->(proj:Kb_Project {code: "AMMO-SAN"})
 RETURN p.name AS Person, type(r) AS Role, proj.name AS Project
 
 //which organizations are funding or sponsoring projects
-MATCH (org:dbo_Organisation)-[r:FUNDS|SPONSORS]->(proj:kb_Project)
+MATCH (org:Dbo_Organisation)-[r:FUNDS|SPONSORS]->(proj:Kb_Project)
 RETURN org.name AS Organization, type(r) AS Relationship, proj.name AS Project
 
 //what distinct systems are mentioned in the data set
-MATCH (s:kb_System)
+MATCH (s:Kb_System)
 RETURN s.name AS SystemName, s.code AS SystemCode
 ORDER BY s.name
 
 //what projects are interoperable or related to "small unit resupply" (SUR)
-MATCH (p:kb_Project {code: "SUR"})-[:INTEROPERATES_WITH]-(other)
+MATCH (p:Kb_Project {code: "SUR"})-[:INTEROPERATES_WITH]-(other)
 RETURN p.name AS Project, other.name AS ConnectedEntity, labels(other) AS Type
 
 //Which Combatant Commands (CCMDs) are identified as sponsors or leads
-MATCH (org:dbo_Organisation)-[r:SPONSORS|LEADS]->(proj:kb_Project)
+MATCH (org:Dbo_Organisation)-[r:SPONSORS|LEADS]->(proj:Kb_Project)
 WHERE org.name IN ['EUCOM', 'INDOPACOM', 'USEUCOM', 'USTRANSCOM']
 RETURN org.name AS Command, type(r) AS Role, proj.name AS Project
 
 //What events are scheduled for the year 2025
-MATCH (e:kb_Event)
+MATCH (e:Kb_Event)
 WHERE e.date CONTAINS '2025'
 RETURN e.name AS Event, e.date AS Date
 
 //Which projects have funding/cost associated with future fiscal years (FY26-28)
-MATCH (proj:kb_Project)<-[:MENTIONS]-(chunk:Chunk)
+MATCH (proj:Kb_Project)<-[:MENTIONS]-(chunk:Chunk)
 WHERE chunk.text CONTAINS 'FY26' OR chunk.text CONTAINS 'FY27' OR chunk.text CONTAINS 'FY28'
 RETURN DISTINCT proj.name AS Project, chunk.text AS TextSnippet
 LIMIT 5
 
 //Why- what is the rationale or problem statement behind "small unite resupply decision dominance"?
-MATCH (proj:kb_Project {code: "SUR-DD"})<-[:MENTIONS]-(chunk:Chunk)
+MATCH (proj:Kb_Project {code: "SUR-DD"})<-[:MENTIONS]-(chunk:Chunk)
 WHERE toLower(chunk.text) CONTAINS 'rationale' OR toLower(chunk.text) CONTAINS 'problem'
 RETURN proj.name AS Project, chunk.text AS Context
 
 //Strategic concepts and capabilities
-MATCH (c:kb_Concept)<-[r]-(n)
+MATCH (c:Kb_Concept)<-[r]-(n)
 RETURN c.name AS Concept, 
        type(r) AS Relationship, 
        n.name AS Related_Node_Name, 
        labels(n)[0] AS Related_Node_Type
 
-//tables
+
 
 
