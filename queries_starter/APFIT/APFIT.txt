@@ -1,0 +1,116 @@
+// List all systems
+MATCH (s:system)
+RETURN s.name, s.id
+ORDER BY s.name
+
+//find connections to watercube
+MATCH (s:Entity:system)<-[:MENTIONS]-(c:Chunk)-[:MENTIONS]->(o:Entity:organization)
+WHERE s.name CONTAINS "WaterCube"
+RETURN DISTINCT s.name AS System, o.name AS Associated_Organization
+
+//What systems is APFIT funding
+MATCH (p:Entity:program {name: "APFIT"})<-[:MENTIONS]-(c:Chunk)-[:MENTIONS]->(s:Entity:system)
+RETURN p.name AS Program, s.name AS Funded_System, c.text AS Context
+
+// Find Organizations and Persons mentioned in the same context as APFIT
+MATCH (p:program {name: 'APFIT'})<-[:MENTIONS]-(c:Chunk)-[:MENTIONS]->(entity)
+WHERE entity:organization OR entity:person
+RETURN labels(entity)[0] AS EntityType, entity.name AS StakeholderName
+
+// Find the Systems and Concepts (Capabilities) linked to APFIT
+MATCH (p:program {name: 'APFIT'})<-[:MENTIONS]-(c:Chunk)-[:MENTIONS]->(target)
+WHERE target:system OR target:concept
+RETURN labels(target)[0] AS Type, target.name AS Capability_or_System
+
+// Retrieve the Funding Table directly associated with APFIT
+MATCH (p:program {name: 'APFIT'})<-[:MENTIONS]-(t:Table)
+RETURN t.summary AS Table_Summary, t.markdown_content AS Funding_Data
+
+// Find Concepts (like ACE, MEU, MDO) connected to the WaterCube system
+MATCH (s:system {name: 'WaterCube'})<-[:MENTIONS]-(c:Chunk)-[:MENTIONS]->(con:concept)
+RETURN con.name AS Operational_Environment, c.text AS Context_Snippet
+
+// Filter Chunks linked to APFIT that contain schedule keywords
+MATCH (p:program {name: 'APFIT'})<-[:MENTIONS]-(c:Chunk)
+WHERE c.text CONTAINS 'Schedule' OR c.text CONTAINS 'FY26' OR c.text CONTAINS 'delivery'
+RETURN c.text AS Schedule_Information
+
+// Search for Problem Statements and Benefits linked to the WaterCube system
+MATCH (s:system {name: 'WaterCube'})<-[:MENTIONS]-(c:Chunk)
+WHERE c.text CONTAINS 'Problem Statement' OR c.text CONTAINS 'Benefit to Warfighter'
+RETURN c.text AS Justification
+
+multi-hop
+// Traverse: System -> Chunk -> Organization
+MATCH (s:system {name: 'WaterCube'})<-[:MENTIONS]-(c:Chunk)-[:MENTIONS]->(o:organization)
+RETURN s.name AS System, collect(o.name) AS Stakeholders, c.text AS Relationship_Context
+
+// 1. Start with the Program 'APFIT'
+MATCH (p:program {name: 'APFIT'})<-[:MENTIONS]-(c1:Chunk)-[:PART_OF]->(d:Document)
+
+// 2. Find Systems mentioned in the SAME document (bridging the chunk gap)
+MATCH (d)<-[:PART_OF]-(c2:Chunk)-[:MENTIONS]->(s:system {name: 'WaterCube'})
+
+// 3. Find Concepts mentioned in the SAME document
+MATCH (d)<-[:PART_OF]-(c3:Chunk)-[:MENTIONS]->(con:concept)
+WHERE c3.text CONTAINS 'concept' OR c3.text CONTAINS 'environment'
+
+RETURN p.name AS Program, s.name AS System, collect(DISTINCT con.name) AS Operational_Concepts
+
+//Stakeholder map
+// 1. Identify the Document via the APFIT Program
+MATCH (p:program {name: 'APFIT'})<-[:MENTIONS]-(c1:Chunk)-[:PART_OF]->(d:Document)
+
+// 2. Find all Organizations mentioned in any chunk of that document
+MATCH (d)<-[:PART_OF]-(c2:Chunk)-[:MENTIONS]->(o:organization)
+
+RETURN p.name AS Program, collect(DISTINCT o.name) AS All_Stakeholders
+
+//Benefit to warfighter
+// 1. Identify the Document via the APFIT Program
+MATCH (p:program {name: 'APFIT'})<-[:MENTIONS]-(c1:Chunk)-[:PART_OF]->(d:Document)
+
+// 2. Scan all chunks in that document for the specific "Benefit" keyword
+MATCH (d)<-[:PART_OF]-(c2:Chunk)
+WHERE c2.text CONTAINS 'Benefit to Warfighter'
+
+RETURN p.name AS Program, c2.text AS Benefit_Statement
+
+//****GDS
+// Create an in-memory graph named 'apfit-graph'
+CALL gds.graph.project(
+    'apfit-graph',
+    ['Chunk', 'organization', 'system', 'program', 'concept'], // Nodes to include
+    {
+        MENTIONS: {orientation: 'UNDIRECTED'} // Treat mentions as bidirectional associations
+    }
+)
+
+//Goal: Determine which entities (Organizations, Systems, etc.) are the most "central" to the document. I
+CALL gds.degree.stream('apfit-graph')
+YIELD nodeId, score
+WITH gds.util.asNode(nodeId) AS node, score
+WHERE NOT 'Chunk' IN labels(node) // Exclude Chunk nodes to focus on Entities
+RETURN node.name AS Entity, labels(node)[0] AS Type, score AS Connections
+ORDER BY score DESC
+LIMIT 10
+
+// Detect communities
+CALL gds.louvain.stream('apfit-graph')
+YIELD nodeId, communityId
+WITH gds.util.asNode(nodeId) AS node, communityId
+WHERE NOT 'Chunk' IN labels(node) // Focus on Entities
+WITH communityId, collect(node.name) AS Members, count(node) AS Size
+WHERE Size > 1 // Filter out tiny isolated groups
+RETURN communityId, Members, Size
+ORDER BY Size DESC
+
+//Similar stakeholders
+CALL gds.nodeSimilarity.stream('apfit-graph')
+YIELD node1, node2, similarity
+WITH gds.util.asNode(node1) AS n1, gds.util.asNode(node2) AS n2, similarity
+WHERE 'organization' IN labels(n1) AND 'organization' IN labels(n2)
+AND n1.name < n2.name // Avoid duplicate pairs (A-B and B-A)
+RETURN n1.name AS Org_A, n2.name AS Org_B, similarity
+ORDER BY similarity DESC
+LIMIT 10

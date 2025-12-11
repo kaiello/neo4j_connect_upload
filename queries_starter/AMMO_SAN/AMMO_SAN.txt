@@ -3,6 +3,10 @@ MATCH (center:kb_Project {code: "AMMO-SAN"})-[r]-(neighbor)
 RETURN center, r, neighbor
 LIMIT 25
 
+//full project ecosystem
+MATCH path = (p:kb_Project {code: "AMMO-SAN"})-[*1..2]-(n)
+RETURN path
+
 //who
 MATCH (p:kb_Person)-[r]->(proj:kb_Project {code: "AMMO-SAN"})
 RETURN p.name AS Person, type(r) AS Role, proj.name AS Project
@@ -40,4 +44,14 @@ LIMIT 5
 MATCH (proj:kb_Project {code: "SUR-DD"})<-[:MENTIONS]-(chunk:Chunk)
 WHERE toLower(chunk.text) CONTAINS 'rationale' OR toLower(chunk.text) CONTAINS 'problem'
 RETURN proj.name AS Project, chunk.text AS Context
+
+//Strategic concepts and capabilities
+MATCH (c:kb_Concept)<-[r]-(n)
+RETURN c.name AS Concept, 
+       type(r) AS Relationship, 
+       n.name AS Related_Node_Name, 
+       labels(n)[0] AS Related_Node_Type
+
+//tables
+
 
