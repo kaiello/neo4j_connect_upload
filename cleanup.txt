@@ -1,0 +1,64 @@
+// 1. Fix Technology
+MATCH (n:dbo_Technology) 
+SET n:Dbo_Technology 
+REMOVE n:dbo_Technology;
+
+// 2. Fix Capability
+MATCH (n:kb_Capability) 
+SET n:Kb_Capability 
+REMOVE n:kb_Capability;
+
+// 3. Fix Concept
+MATCH (n:kb_Concept) 
+SET n:Kb_Concept 
+REMOVE n:kb_Concept;
+
+// 4. Fix Organisation
+MATCH (n:dbo_Organisation) 
+SET n:Dbo_Organisation 
+REMOVE n:dbo_Organisation;
+
+// 5. Fix System
+MATCH (n:kb_System) 
+SET n:Kb_System 
+REMOVE n:kb_System;
+
+// 6. Fix Location
+MATCH (n:dbo_Location) 
+SET n:Dbo_Location 
+REMOVE n:dbo_Location;
+
+// 7. Fix Metric
+MATCH (n:kb_Metric) 
+SET n:Kb_Metric 
+REMOVE n:kb_Metric;
+
+// 8. Fix Component
+MATCH (n:kb_Component) 
+SET n:Kb_Component 
+REMOVE n:kb_Component;
+
+// 9. Fix Standard
+MATCH (n:kb_Standard) 
+SET n:Kb_Standard 
+REMOVE n:kb_Standard;
+
+// 10. Fix Event
+MATCH (n:kb_Event) 
+SET n:Kb_Event 
+REMOVE n:kb_Event;
+
+// 11. Fix Weapon
+MATCH (n:kb_Weapon) 
+SET n:Kb_Weapon 
+REMOVE n:kb_Weapon;
+
+// 12. Fix Software
+MATCH (n:kb_Software) 
+SET n:Kb_Software 
+REMOVE n:kb_Software;
+
+// 13. Fix Extracted Asset
+MATCH (n:kb_Extracted_Asset) 
+SET n:Kb_Extracted_Asset 
+REMOVE n:kb_Extracted_Asset;
